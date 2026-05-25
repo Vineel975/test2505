@@ -10040,66 +10040,27 @@ namespace Enrollment.Controllers
                             }
                         }
 
-                        // Step 1: Insert minimal row with just the columns we know are required.
-                        //         Discover ID of newly-inserted row.
-                        // Step 2: UPDATE the row to populate Level1/Level2/Level3/PCSCode/BillAmount etc.
-                        //         This way, if a column name is wrong, only that one field is empty
-                        //         instead of the whole INSERT failing.
-                        ins.CommandText = @"
-                            INSERT INTO ClaimsCoding
-                                (ClaimID, Slno, TPAProcedureID,
-                                 BillAmount, PackageRate, Discount,
-                                 EligibleAmount, DisallowedAmount, PayableAmount,
-                                 ICDCode, BillingType_P51, Deleted, CreatedDatetime,
-                                 CreatedUserRegionID)
-                            OUTPUT INSERTED.ID
-                            VALUES
-                                (@cid, @slno, @tpa,
-                                 @bill, NULL, 0,
-                                 @elig, @dis, @pay,
-                                 @icd, 202, 0, GETDATE(),
-                                 @region)";
-                        ins.Parameters.AddWithValue("@cid",    claimIdLong);
-                        ins.Parameters.AddWithValue("@slno",   (byte)slNoInt);
-                        ins.Parameters.AddWithValue("@tpa",    tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
-                        ins.Parameters.AddWithValue("@bill",   packageAmt > 0 ? (object)packageAmt : DBNull.Value);
-                        ins.Parameters.AddWithValue("@elig",   eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
-                        ins.Parameters.AddWithValue("@dis",    disallowed > 0 ? (object)disallowed : DBNull.Value);
-                        ins.Parameters.AddWithValue("@pay",    eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
-                        ins.Parameters.AddWithValue("@icd",    icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
-                        ins.Parameters.AddWithValue("@region", userRegionId);
+                        // Step 1: Look up Level1/Level2/Level3/code from TPAProcedures self-referencing hierarchy.
+                        //   l3 = selected procedure (e.g. 1331 "Normal delivery with well baby care")
+                        //   l2 = parent (e.g. 402 "Normal Delivery")
+                        //   l1 = grandparent (e.g. 401 "Obstetrics and Gynecology")
+                        int    level1Id = 0, level2Id = 0, level3Id = tpaProcId;
+                        string l3Name = null, pcsCode = null, pcsDesc = null;
+                        int    treatmentType = 0;
 
-                        var newRowIdObj = ins.ExecuteScalar();
-                        long newRowId   = newRowIdObj != null && newRowIdObj != DBNull.Value
-                                          ? Convert.ToInt64(newRowIdObj) : 0;
-
-                        // Step 2: Look up Level1/Level2/Level3/code from TPAProcedures self-referencing
-                        // hierarchy. Structure:
-                        //   - Level3 row (e.g. ID 1331 "Normal delivery with well baby care") → ParentId=402
-                        //   - Level2 row (e.g. ID 402 "Normal Delivery")                       → ParentId=401
-                        //   - Level1 row (e.g. ID 401 "Obstetrics and Gynecology")             → ParentId=NULL/0
-                        if (newRowId > 0 && tpaProcId > 0)
+                        if (tpaProcId > 0)
                         {
                             try
                             {
-                                // Resolve Level3 (the selected procedure itself), Level2 (parent), Level1 (grandparent)
-                                int    level1Id = 0, level2Id = 0, level3Id = tpaProcId, parentId2 = 0;
-                                string level1Name = null, level2Name = null, level3Name = null, pcsCode = null;
-                                int    treatmentType = 0;
-
                                 var lookup = conn.CreateCommand();
                                 lookup.CommandText = @"
                                     SELECT
-                                        l3.ID                                  AS L3ID,
-                                        l3.level3                              AS L3Name,
-                                        l3.ParentId                            AS L3Parent,
-                                        ISNULL(l3.code, '')                    AS PCS,
-                                        ISNULL(l3.TreatmentType_P19, 0)        AS TT,
-                                        l2.ID                                  AS L2ID,
-                                        l2.level2                              AS L2Name,
-                                        l2.ParentId                            AS L2Parent,
-                                        l1.ID                                  AS L1ID,
-                                        l1.level1                              AS L1Name
+                                        l3.ID                                       AS L3ID,
+                                        ISNULL(l3.level3, ISNULL(l3.level2, l3.level1)) AS L3Name,
+                                        ISNULL(l3.code, '')                         AS PCS,
+                                        ISNULL(l3.TreatmentType_P19, 0)             AS TT,
+                                        l2.ID                                       AS L2ID,
+                                        l1.ID                                       AS L1ID
                                     FROM TPAProcedures l3 WITH(NOLOCK)
                                     LEFT JOIN TPAProcedures l2 WITH(NOLOCK) ON l2.ID = l3.ParentId
                                     LEFT JOIN TPAProcedures l1 WITH(NOLOCK) ON l1.ID = l2.ParentId
@@ -10110,88 +10071,72 @@ namespace Enrollment.Controllers
                                     if (rdr.Read())
                                     {
                                         level3Id      = Convert.ToInt32(rdr["L3ID"]);
-                                        level3Name    = rdr["L3Name"]?.ToString();
+                                        l3Name        = rdr["L3Name"]?.ToString();
                                         pcsCode       = rdr["PCS"]?.ToString();
                                         treatmentType = Convert.ToInt32(rdr["TT"]);
                                         level2Id      = rdr["L2ID"] != DBNull.Value ? Convert.ToInt32(rdr["L2ID"]) : 0;
-                                        level2Name    = rdr["L2Name"]?.ToString();
                                         level1Id      = rdr["L1ID"] != DBNull.Value ? Convert.ToInt32(rdr["L1ID"]) : 0;
-                                        level1Name    = rdr["L1Name"]?.ToString();
                                     }
                                 }
-
+                                pcsDesc = l3Name;  // Use Level3 name as PCS description
                                 System.Diagnostics.Debug.WriteLine(
-                                    "[ClaimAI] TPA lookup: L1=" + level1Id + ":" + level1Name +
-                                    " L2=" + level2Id + ":" + level2Name +
-                                    " L3=" + level3Id + ":" + level3Name +
-                                    " PCS=" + pcsCode + " TT=" + treatmentType);
-
-                                // Discover ClaimsCoding columns so we only set ones that exist
-                                var ccCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                using (var colCmd = conn.CreateCommand())
-                                {
-                                    colCmd.CommandText = @"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-                                                           WHERE TABLE_NAME = 'ClaimsCoding'";
-                                    using (var rdr = colCmd.ExecuteReader())
-                                    {
-                                        while (rdr.Read()) ccCols.Add(rdr["COLUMN_NAME"].ToString());
-                                    }
-                                }
-
-                                var setParts = new List<string>();
-                                var updCmd   = conn.CreateCommand();
-                                int paramIdx = 0;
-                                Action<string[], object> trySet = (candidates, value) =>
-                                {
-                                    foreach (var c in candidates)
-                                    {
-                                        if (ccCols.Contains(c))
-                                        {
-                                            string p = "@p" + (paramIdx++);
-                                            setParts.Add("[" + c + "] = " + p);
-                                            updCmd.Parameters.AddWithValue(p, value ?? DBNull.Value);
-                                            return;
-                                        }
-                                    }
-                                };
-
-                                // Level1 — typically stored as ID
-                                trySet(new[]{"TPALevel1","Level1ID","Level1","Level1_P12","Level_1"},
-                                       level1Id > 0 ? (object)level1Id : null);
-                                // Level2 — typically stored as ID
-                                trySet(new[]{"TPALevel2","Level2ID","Level2","Level2_P12","Level_2"},
-                                       level2Id > 0 ? (object)level2Id : null);
-                                // Level3 — usually the procedure ID itself
-                                trySet(new[]{"TPALevel3","Level3","Level3ID","Level_3"},
-                                       level3Id > 0 ? (object)level3Id : null);
-                                // PCS / Code
-                                trySet(new[]{"PCSCode","PCS_Code","PCS","Code","code"},
-                                       !string.IsNullOrEmpty(pcsCode) ? (object)pcsCode : null);
-                                // Category — Primary by default
-                                trySet(new[]{"Category","CategoryID","Category_P","TreatmentCategory"},
-                                       (object)1);
-                                // TreatmentType — copy from TPA master
-                                trySet(new[]{"TreatmentType","TreatmentTypeID","TreatmentType_P19","TreatmentType_P","Treatment_Type"},
-                                       treatmentType > 0 ? (object)treatmentType : null);
-
-                                if (setParts.Count > 0)
-                                {
-                                    updCmd.CommandText = "UPDATE ClaimsCoding SET " +
-                                                         string.Join(", ", setParts) +
-                                                         " WHERE ID = @id";
-                                    updCmd.Parameters.AddWithValue("@id", newRowId);
-                                    int affected = updCmd.ExecuteNonQuery();
-                                    System.Diagnostics.Debug.WriteLine(
-                                        "[ClaimAI] Enriched row: " + string.Join(", ", setParts) +
-                                        " | rows affected=" + affected);
-                                }
+                                    "[ClaimAI] TPA lookup: L1=" + level1Id +
+                                    " L2=" + level2Id +
+                                    " L3=" + level3Id +
+                                    " (" + l3Name + ") PCS=" + pcsCode + " TT=" + treatmentType);
                             }
-                            catch (Exception enrichEx)
+                            catch (Exception lookupEx)
                             {
-                                System.Diagnostics.Debug.WriteLine("[ClaimAI] Enrich failed: " + enrichEx.Message);
-                                // Row still saved — enrichment is best-effort
+                                System.Diagnostics.Debug.WriteLine("[ClaimAI] TPA lookup failed: " + lookupEx.Message);
                             }
                         }
+
+                        if (treatmentType == 0) treatmentType = 66;  // Default to Surgical (cataract uses 66)
+
+                        // Step 2: INSERT with full set of columns matching working cataract rows.
+                        // Column names taken from cataract row sample: TPALevel1, TPALevel2, TPALevel3,
+                        // PCSCode, PCSDescription, TreatementTypeID_19, Createddatetime, isGipsa,
+                        // isDayCare, isPED, PackageRatio, BillingType_P51=201.
+                        ins.CommandText = @"
+                            INSERT INTO ClaimsCoding
+                                (ClaimID, Slno, TPAProcedureID,
+                                 TPALevel1, TPALevel2, TPALevel3,
+                                 PCSCode, PCSDescription, TreatementTypeID_19,
+                                 BillAmount, PackageRate, PackageRatio, Discount,
+                                 EligibleAmount, DisallowedAmount, PayableAmount,
+                                 ICDCode, BillingType_P51,
+                                 isGipsa, isDayCare, isPED,
+                                 Deleted, Createddatetime, CreatedUserRegionID)
+                            OUTPUT INSERTED.ID
+                            VALUES
+                                (@cid, @slno, @tpa,
+                                 @l1, @l2, @l3,
+                                 @pcs, @pcsDesc, @tt,
+                                 @bill, NULL, 100.00, 0,
+                                 @elig, @dis, @pay,
+                                 @icd, 201,
+                                 0, 0, 0,
+                                 0, GETDATE(), @region)";
+                        ins.Parameters.AddWithValue("@cid",     claimIdLong);
+                        ins.Parameters.AddWithValue("@slno",    (byte)slNoInt);
+                        ins.Parameters.AddWithValue("@tpa",     tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@l1",      level1Id > 0 ? (object)level1Id : DBNull.Value);
+                        ins.Parameters.AddWithValue("@l2",      level2Id > 0 ? (object)level2Id : DBNull.Value);
+                        ins.Parameters.AddWithValue("@l3",      level3Id > 0 ? (object)level3Id : DBNull.Value);
+                        ins.Parameters.AddWithValue("@pcs",     !string.IsNullOrEmpty(pcsCode) ? (object)pcsCode : DBNull.Value);
+                        ins.Parameters.AddWithValue("@pcsDesc", !string.IsNullOrEmpty(pcsDesc) ? (object)pcsDesc : DBNull.Value);
+                        ins.Parameters.AddWithValue("@tt",      treatmentType);
+                        ins.Parameters.AddWithValue("@bill",    packageAmt > 0 ? (object)packageAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@elig",    eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@dis",     disallowed > 0 ? (object)disallowed : (object)0m);
+                        ins.Parameters.AddWithValue("@pay",     eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@icd",     icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@region",  userRegionId);
+
+                        var newRowIdObj = ins.ExecuteScalar();
+                        long newRowId   = newRowIdObj != null && newRowIdObj != DBNull.Value
+                                          ? Convert.ToInt64(newRowIdObj) : 0;
+                        System.Diagnostics.Debug.WriteLine("[ClaimAI] Inserted ClaimsCoding row ID=" + newRowId);
                     }
                 }
 
