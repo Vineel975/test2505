@@ -9946,6 +9946,56 @@ namespace Enrollment.Controllers
                         {
                             try
                             {
+                                // First — check depth of the selected procedure ID.
+                                // We need a true Level3 (leaf) row. If JS matched a Level2 (parent) ID,
+                                // walk DOWN to the first child to get the real procedure.
+                                int actualL3Id = tpaProcId;
+                                int parentChain = 0;
+                                int currentId   = tpaProcId;
+                                int currentParent = 0;
+
+                                // Determine if the selected ID is L1, L2, or L3 by counting ancestors
+                                var depthCmd = conn.CreateCommand();
+                                depthCmd.CommandText = "SELECT ISNULL(ParentId, 0) AS P FROM TPAProcedures WHERE ID = @id";
+                                depthCmd.Parameters.AddWithValue("@id", currentId);
+                                var pObj = depthCmd.ExecuteScalar();
+                                currentParent = pObj != null && pObj != DBNull.Value ? Convert.ToInt32(pObj) : 0;
+
+                                // Count ancestors: 0 ancestors = L1, 1 = L2, 2 = L3
+                                int ancestorCount = 0;
+                                int walkId = currentParent;
+                                while (walkId > 0 && ancestorCount < 5)
+                                {
+                                    var wc = conn.CreateCommand();
+                                    wc.CommandText = "SELECT ISNULL(ParentId, 0) FROM TPAProcedures WHERE ID = @id";
+                                    wc.Parameters.AddWithValue("@id", walkId);
+                                    var nextObj = wc.ExecuteScalar();
+                                    int nextP = nextObj != null && nextObj != DBNull.Value ? Convert.ToInt32(nextObj) : 0;
+                                    ancestorCount++;
+                                    if (nextP == 0) break;
+                                    walkId = nextP;
+                                }
+
+                                // If ancestorCount < 2, the matched ID is L1 or L2, not L3.
+                                // Try to walk DOWN to find a leaf child.
+                                if (ancestorCount < 2)
+                                {
+                                    var childCmd = conn.CreateCommand();
+                                    childCmd.CommandText = @"SELECT TOP 1 ID FROM TPAProcedures WITH(NOLOCK)
+                                                              WHERE ParentId = @parent AND ISNULL(Deleted, 0) = 0
+                                                              ORDER BY ID";
+                                    childCmd.Parameters.AddWithValue("@parent", tpaProcId);
+                                    var childObj = childCmd.ExecuteScalar();
+                                    if (childObj != null && childObj != DBNull.Value)
+                                    {
+                                        actualL3Id = Convert.ToInt32(childObj);
+                                        System.Diagnostics.Debug.WriteLine(
+                                            "[ClaimAI] Walked DOWN from L" + (ancestorCount + 1) +
+                                            " ID=" + tpaProcId + " to leaf ID=" + actualL3Id);
+                                    }
+                                }
+
+                                // Now look up Level1/Level2/Level3/PCS using the resolved L3 ID
                                 var lookup = conn.CreateCommand();
                                 lookup.CommandText = @"
                                     SELECT
@@ -9959,7 +10009,7 @@ namespace Enrollment.Controllers
                                     LEFT JOIN TPAProcedures l2 WITH(NOLOCK) ON l2.ID = l3.ParentId
                                     LEFT JOIN TPAProcedures l1 WITH(NOLOCK) ON l1.ID = l2.ParentId
                                     WHERE l3.ID = @tpa";
-                                lookup.Parameters.AddWithValue("@tpa", tpaProcId);
+                                lookup.Parameters.AddWithValue("@tpa", actualL3Id);
                                 using (var rdr = lookup.ExecuteReader())
                                 {
                                     if (rdr.Read())
@@ -9972,9 +10022,22 @@ namespace Enrollment.Controllers
                                         level1Id      = rdr["L1ID"] != DBNull.Value ? Convert.ToInt32(rdr["L1ID"]) : 0;
                                     }
                                 }
-                                pcsDesc = l3Name;  // Use Level3 name as PCS description
+
+                                // If PCS code is still empty, try grabbing it from the parent
+                                // (some Level3 rows have empty code; the parent's code is often used)
+                                if (string.IsNullOrEmpty(pcsCode) && level2Id > 0)
+                                {
+                                    var pcsCmd = conn.CreateCommand();
+                                    pcsCmd.CommandText = "SELECT TOP 1 ISNULL(code, '') FROM TPAProcedures WHERE ID = @id";
+                                    pcsCmd.Parameters.AddWithValue("@id", level2Id);
+                                    var pcsObj = pcsCmd.ExecuteScalar();
+                                    if (pcsObj != null && pcsObj != DBNull.Value)
+                                        pcsCode = pcsObj.ToString();
+                                }
+
+                                pcsDesc = l3Name;
                                 System.Diagnostics.Debug.WriteLine(
-                                    "[ClaimAI] TPA lookup: L1=" + level1Id +
+                                    "[ClaimAI] TPA lookup result: L1=" + level1Id +
                                     " L2=" + level2Id +
                                     " L3=" + level3Id +
                                     " (" + l3Name + ") PCS=" + pcsCode + " TT=" + treatmentType);
