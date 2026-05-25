@@ -32,13 +32,20 @@ import { validateExtractedPatient, getPatientInfoDbByClaimId } from "@/lib/db";
 export const maxDuration = 120;
 
 
-// Prefer internal Docker network URL (CONVEX_SELF_HOSTED_URL) for server-to-server calls.
-// Falls back to public URL only if internal isn't configured.
-// The browser uses NEXT_PUBLIC_CONVEX_URL — that's separate (baked into JS at build time).
-const CONVEX_URL =
-  process.env.CONVEX_SELF_HOSTED_URL ??
-  process.env.CONVEX_URL_PUBLIC ??
-  process.env.NEXT_PUBLIC_CONVEX_URL;
+// Convex URL resolution:
+// - In Docker production: CONVEX_SELF_HOSTED_URL="http://backend:3210" (internal Docker DNS)
+// - In local dev: CONVEX_SELF_HOSTED_URL may not resolve, so use public URL
+// - If hostname starts with "http://backend" or contains "localhost"/Docker hostname,
+//   only use it if explicitly running inside Docker
+const RAW_INTERNAL = process.env.CONVEX_SELF_HOSTED_URL ?? "";
+const RAW_PUBLIC   = process.env.CONVEX_URL_PUBLIC ?? process.env.NEXT_PUBLIC_CONVEX_URL ?? "";
+
+// Detect if we are inside Docker (heuristic — set DOCKER_ENV=1 in your container env)
+const IN_DOCKER = process.env.DOCKER_ENV === "1" || process.env.IN_DOCKER === "true";
+
+// Use internal URL only when explicitly running in Docker AND it is set.
+// Otherwise default to the public URL — works locally and in prod fallback.
+const CONVEX_URL = (IN_DOCKER && RAW_INTERNAL) ? RAW_INTERNAL : RAW_PUBLIC;
 
 async function uploadToConvex(
   convex: ConvexHttpClient,
