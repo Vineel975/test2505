@@ -1,1 +1,10 @@
-Access to fetch at 'https://claims-helixview.fhpl.net/api/classify-claim-type' from origin 'https://spectra-ai.fhpl.net' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+fetch('/MedicalScrutiny/StartClaimAuditProxy', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    claimId: '<your test claim ID>',
+    slNo: '1'
+  })
+})
+.then(r => r.json())
+.then(data => console.log('audit/start result:', data));
