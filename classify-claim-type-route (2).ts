@@ -41,7 +41,7 @@ const MATERNITY_KEYWORDS = [
   "gdm", "placenta previa", "placental abruption", "ectopic pregnancy",
   "preterm labour", "preterm labor", "foetal distress", "fetal distress",
   "polyhydramnios", "oligohydramnios", "miscarriage", "abortion", "mtp",
-  "medical termination of pregnancy",
+  "medical termination of pregnancy","primi"
   // Newborn
   "newborn", "neonatal", "neonate", "well baby",
   // Trimester
