@@ -9514,7 +9514,7 @@ namespace Enrollment.Controllers
 
                 string vMessage = string.Empty;
                 int result = _objClaimsVM.Save_ServiceBillingDetailsVM(
-                    claimIdLong, slNoInt,
+                    claimIdLong, (short)slNoInt,
                     dtBillDetails, dtDeductions, dtServices,
                     4, 18, roleId, regionId, userRegionId,
                     hospAmt.ToString(), eligibleAmt.ToString(),
@@ -9934,44 +9934,6 @@ namespace Enrollment.Controllers
                         if (Session[SessionValue.UserRegionID] != null)
                             int.TryParse(Session[SessionValue.UserRegionID].ToString(), out userRegionId);
 
-                        // Look up the TPA procedure master row to copy Level1/Level2/Level3, PCSCode, Category etc.
-                        // into the new ClaimsCoding row — same way native Spectra coding save does it.
-                        int     tpaLevel1   = 0, tpaLevel2 = 0;
-                        string  tpaLevel3   = null;
-                        string  pcsCode     = null;
-                        int     category    = 1; // Primary (same as cataract)
-                        if (tpaProcId > 0)
-                        {
-                            var lookup = conn.CreateCommand();
-                            lookup.CommandText = @"
-                                SELECT TOP 1
-                                    ISNULL(Level1ID, 0)   AS L1,
-                                    ISNULL(Level2ID, 0)   AS L2,
-                                    ISNULL(Level3, '')    AS L3,
-                                    ISNULL(PCSCode, '')   AS PCS
-                                FROM TPAProcedures WITH(NOLOCK)
-                                WHERE ID = @tpa AND ISNULL(Deleted, 0) = 0";
-                            lookup.Parameters.AddWithValue("@tpa", tpaProcId);
-                            try
-                            {
-                                using (var rdr = lookup.ExecuteReader())
-                                {
-                                    if (rdr.Read())
-                                    {
-                                        tpaLevel1 = Convert.ToInt32(rdr["L1"]);
-                                        tpaLevel2 = Convert.ToInt32(rdr["L2"]);
-                                        tpaLevel3 = rdr["L3"]  != DBNull.Value ? rdr["L3"].ToString()  : null;
-                                        pcsCode   = rdr["PCS"] != DBNull.Value ? rdr["PCS"].ToString() : null;
-                                    }
-                                }
-                            }
-                            catch (Exception lookupEx)
-                            {
-                                System.Diagnostics.Debug.WriteLine("[SaveCodingRowForClaimAI] TPA lookup failed: " + lookupEx.Message);
-                                // Try alternative column names if first attempt fails
-                            }
-                        }
-
                         // Step 1: Look up Level1/Level2/Level3/code from TPAProcedures self-referencing hierarchy.
                         //   l3 = selected procedure (e.g. 1331 "Normal delivery with well baby care")
                         //   l2 = parent (e.g. 402 "Normal Delivery")
@@ -10271,20 +10233,6 @@ namespace Enrollment.Controllers
             }
         }
 
-        /// <summary>
-        /// Returns Balance Sum Insured data for a claim — called by ClaimAI's
-        /// bsi-proxy Next.js API route during financial summary display.
-        ///
-        /// Resolves claimId → MemberPolicyID + SITypeID from McarePlus DB,
-        /// then calls SpectraUtils Main().GetBSI() which runs CalculateBSI(),
-        /// CalculateSumLimits(), CalculateOtherBenefits() against live data.
-        ///
-        /// Returns BSIinfo JSON with CORS header so ClaimAI server (localhost:3000)
-        /// can read it even though Spectra is on a different port (localhost:50052).
-        ///
-        /// GET /MedicalScrutiny/GetBSIForClaimAI?claimId=xxx
-        /// </summary>
-        [HttpGet]
         /// <summary>
         /// GET /MedicalScrutiny/IsClaimAISummaryAllowed?claimId=xxx&slNo=1
         /// Checks Claimsdetails directly — returns allowed=true only if
