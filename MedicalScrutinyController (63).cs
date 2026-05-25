@@ -7706,8 +7706,6 @@ namespace Enrollment.Controllers
 
                 using (var client = new System.Net.Http.HttpClient())
                 {
-                using (var client = new System.Net.Http.HttpClient())
-                {
                     client.Timeout = TimeSpan.FromMinutes(3);
 
                     var request = new System.Net.Http.HttpRequestMessage(
@@ -7991,7 +7989,7 @@ namespace Enrollment.Controllers
                     var m = System.Text.RegularExpressions.Regex.Match(
                         connStr, @"provider connection string=""([^""]+)""",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
@@ -8014,8 +8012,7 @@ namespace Enrollment.Controllers
                         string logDir = System.Web.Hosting.HostingEnvironment.MapPath("~/App_Data/Logs");
                         if (!System.IO.Directory.Exists(logDir)) System.IO.Directory.CreateDirectory(logDir);
                         System.IO.File.AppendAllText(System.IO.Path.Combine(logDir, "ClaimType_" + DateTime.Now.ToString("yyyyMMdd") + ".log"),
-                            DateTime.Now.ToString("HH:mm:ss") + $" claimId={claimIdLong} diagnosis={diagnosisText}
-");
+                            DateTime.Now.ToString("HH:mm:ss") + $" claimId={claimIdLong} diagnosis={diagnosisText}\n");
                     } catch { }
 
                     if (string.IsNullOrWhiteSpace(diagnosisText))
@@ -8195,71 +8192,6 @@ namespace Enrollment.Controllers
         /// GET /MedicalScrutiny/GetCodingProcedureEligibleLimit
         /// Called by ClaimAI to get the exact DB-calculated benefit plan limit
         /// using USP_Codingprocedurelimits with the claim's current coding data.
-        /// </summary>
-        [HttpGet]
-        [AllowAnonymous]
-        [OverrideAuthorization]
-        [HttpGet]
-        [AllowAnonymous]
-                    }
-                }
-                catch (Exception billEx)
-                {
-                    System.Diagnostics.Debug.WriteLine("[Staging] Bill fetch error: " + billEx.Message);
-                }
-
-                if (string.IsNullOrEmpty(billBase64))
-                    return Json(new { Success = false, Message = "No medical bill found for claimId=" + claimId }, JsonRequestBehavior.AllowGet);
-
-                // ── Tariff — call GetTariffDocument internally ───────────────────────
-                string tariffBase64 = null; string tariffFileName = null;
-                try
-                {
-                    string baseUrl2   = $"{Request.Url.Scheme}://{Request.Url.Authority}";
-                    var    http2      = System.Net.WebRequest.Create($"{baseUrl2}/MedicalScrutiny/GetTariffDocument?claimId={cId}&slNo={sNo}") as System.Net.HttpWebRequest;
-                    http2.Method      = "GET";
-                    http2.CookieContainer = new System.Net.CookieContainer();
-                    foreach (System.Net.Cookie c in Request.Cookies.AllKeys
-                        .Select(k => new System.Net.Cookie(k, Request.Cookies[k].Value, "/", Request.Url.Host)))
-                        http2.CookieContainer.Add(c);
-
-                    using (var resp2 = http2.GetResponse() as System.Net.HttpWebResponse)
-                    using (var sr2   = new System.IO.StreamReader(resp2.GetResponseStream()))
-                    {
-                        string json2     = sr2.ReadToEnd();
-                        dynamic tarObj   = Newtonsoft.Json.JsonConvert.DeserializeObject(json2);
-                        if (tarObj.Success == true && tarObj.Data != null)
-                        {
-                            tariffBase64   = tarObj.Data.base64Content?.ToString();
-                            tariffFileName = tarObj.Data.fileName?.ToString() ?? $"{cId}-tariff.pdf";
-                        }
-                    }
-                }
-                catch (Exception tarEx)
-                {
-                    System.Diagnostics.Debug.WriteLine("[Staging] Tariff fetch error (optional): " + tarEx.Message);
-                }
-
-                var serializer = new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength = int.MaxValue };
-                return Content(serializer.Serialize(new {
-                    Success        = true,
-                    BillBase64     = billBase64,
-                    BillFileName   = billFileName,
-                    TariffBase64   = tariffBase64,
-                    TariffFileName = tariffFileName,
-                    ClaimId        = claimId,
-                    SlNo           = sNo
-                }), "application/json");
-            }
-            catch (Exception ex)
-            {
-                return Json(new { Success = false, Message = ex.Message }, JsonRequestBehavior.AllowGet);
-            }
-        }
-
-        /// <summary>
-        /// GET /MedicalScrutiny/GetCodingProcedureEligibleLimit
-        /// Calls USP_Codingprocedurelimits to get the exact DB-calculated benefit plan limit.
         /// </summary>
         [HttpGet]
         [AllowAnonymous]
@@ -10376,7 +10308,7 @@ namespace Enrollment.Controllers
                     var m = System.Text.RegularExpressions.Regex.Match(
                         connStr, @"provider connection string=""([^""]+)""",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 int claimTypeId = 0, requestTypeId = 0;
@@ -10439,7 +10371,7 @@ namespace Enrollment.Controllers
                     var m = System.Text.RegularExpressions.Regex.Match(
                         connStr, @"provider connection string=""([^""]+)""",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
+                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 // DO NOT modify BillingCorrection or IsAprvFacilitychanged in DB here.
@@ -10458,67 +10390,6 @@ namespace Enrollment.Controllers
                 return Json(new { success = false, message = ex.Message });
             }
         }
-
-
-        [HttpGet]
-        public ActionResult IsClaimAISummaryAllowed(string claimId = null, string slNo = null)
-        {
-            try
-            {
-                long claimIdLong;
-                int slNoInt;
-                if (!long.TryParse((claimId ?? "").Trim(), out claimIdLong) || claimIdLong <= 0)
-                    return Json(new { allowed = false, reason = "Invalid ClaimID" }, JsonRequestBehavior.AllowGet);
-                if (!int.TryParse((slNo ?? "1").Trim(), out slNoInt)) slNoInt = 1;
-
-                string connStr = System.Configuration.ConfigurationManager
-                                       .ConnectionStrings["McarePlusEntities"].ConnectionString;
-                if (connStr.StartsWith("metadata=", StringComparison.OrdinalIgnoreCase))
-                {
-                    var m = System.Text.RegularExpressions.Regex.Match(
-                        connStr, @"provider connection string=""([^""]+)""",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (m.Success) connStr = m.Groups[1].Value.Replace("&quot;", """);
-                }
-
-                int claimTypeId = 0, requestTypeId = 0;
-                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
-                {
-                    conn.Open();
-                    var cmd = conn.CreateCommand();
-                    cmd.CommandText = @"
-                        SELECT TOP 1 ClaimTypeID, RequestTypeID
-                        FROM   Claimsdetails
-                        WHERE  ClaimID = @ClaimID
-                          AND  Slno    = @SlNo
-                          AND  ISNULL(Deleted, 0) = 0";
-                    cmd.Parameters.AddWithValue("@ClaimID", claimIdLong);
-                    cmd.Parameters.AddWithValue("@SlNo",    slNoInt);
-                    using (var rdr = cmd.ExecuteReader())
-                    {
-                        if (rdr.Read())
-                        {
-                            claimTypeId   = rdr["ClaimTypeID"]   == DBNull.Value ? 0 : Convert.ToInt32(rdr["ClaimTypeID"]);
-                            requestTypeId = rdr["RequestTypeID"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["RequestTypeID"]);
-                        }
-                    }
-                }
-
-                bool allowed = (claimTypeId == 1 && requestTypeId == 1);
-                return Json(new {
-                    allowed       = allowed,
-                    claimTypeId   = claimTypeId,
-                    requestTypeId = requestTypeId,
-                    reason        = allowed ? "OK" : "AI Summary is only available for Reimbursement Claim Type"
-                }, JsonRequestBehavior.AllowGet);
-            }
-            catch (Exception ex)
-            {
-                return Json(new { allowed = false, reason = ex.Message }, JsonRequestBehavior.AllowGet);
-            }
-        }
-
-
 
 
         public ActionResult GetBSIForClaimAI(string claimId)
@@ -10659,7 +10530,7 @@ namespace Enrollment.Controllers
                     var _m = System.Text.RegularExpressions.Regex.Match(
                         _connStr, @"provider connection string=""([^""]+)""",
                         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    if (_m.Success) _connStr = _m.Groups[1].Value.Replace("&quot;", """);
+                    if (_m.Success) _connStr = _m.Groups[1].Value.Replace("&quot;", "\"");
                 }
 
                 using (var conn = new System.Data.SqlClient.SqlConnection(_connStr))
