@@ -9997,23 +9997,31 @@ namespace Enrollment.Controllers
                         // All other columns will use their DB defaults.
                         conn.Close(); conn.Open();
                         var ins = conn.CreateCommand();
+                        // Get UserRegionID from session
+                        int userRegionId = 1;
+                        if (Session[SessionValue.UserRegionID] != null)
+                            int.TryParse(Session[SessionValue.UserRegionID].ToString(), out userRegionId);
+
                         ins.CommandText = @"
                             INSERT INTO ClaimsCoding
                                 (ClaimID, Slno, TPAProcedureID, BillAmount, PackageRate, Discount,
                                  EligibleAmount, DisallowedAmount, PayableAmount,
-                                 ICDCode, BillingType_P51, Deleted, CreatedDatetime)
+                                 ICDCode, BillingType_P51, Deleted, CreatedDatetime,
+                                 CreatedUserRegionID)
                             VALUES
                                 (@cid, @slno, @tpa, @bill, NULL, 0,
                                  @elig, @dis, @pay,
-                                 @icd, 202, 0, GETDATE())";
-                        ins.Parameters.AddWithValue("@cid",  claimIdLong);
-                        ins.Parameters.AddWithValue("@slno", (byte)slNoInt);
-                        ins.Parameters.AddWithValue("@tpa",  tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
-                        ins.Parameters.AddWithValue("@bill", packageAmt > 0 ? (object)packageAmt : DBNull.Value);
-                        ins.Parameters.AddWithValue("@elig", eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
-                        ins.Parameters.AddWithValue("@dis",  disallowed > 0 ? (object)disallowed : DBNull.Value);
-                        ins.Parameters.AddWithValue("@pay",  eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
-                        ins.Parameters.AddWithValue("@icd",  icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
+                                 @icd, 202, 0, GETDATE(),
+                                 @region)";
+                        ins.Parameters.AddWithValue("@cid",    claimIdLong);
+                        ins.Parameters.AddWithValue("@slno",   (byte)slNoInt);
+                        ins.Parameters.AddWithValue("@tpa",    tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@bill",   packageAmt > 0 ? (object)packageAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@elig",   eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@dis",    disallowed > 0 ? (object)disallowed : DBNull.Value);
+                        ins.Parameters.AddWithValue("@pay",    eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@icd",    icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@region", userRegionId);
                         ins.ExecuteNonQuery();
                     }
                 }
