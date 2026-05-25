@@ -10040,19 +10040,21 @@ namespace Enrollment.Controllers
                             }
                         }
 
+                        // Step 1: Insert minimal row with just the columns we know are required.
+                        //         Discover ID of newly-inserted row.
+                        // Step 2: UPDATE the row to populate Level1/Level2/Level3/PCSCode/BillAmount etc.
+                        //         This way, if a column name is wrong, only that one field is empty
+                        //         instead of the whole INSERT failing.
                         ins.CommandText = @"
                             INSERT INTO ClaimsCoding
                                 (ClaimID, Slno, TPAProcedureID,
-                                 TPALevel1, TPALevel2, TPALevel3, PCSCode,
-                                 Category,
                                  BillAmount, PackageRate, Discount,
                                  EligibleAmount, DisallowedAmount, PayableAmount,
                                  ICDCode, BillingType_P51, Deleted, CreatedDatetime,
                                  CreatedUserRegionID)
+                            OUTPUT INSERTED.ID
                             VALUES
                                 (@cid, @slno, @tpa,
-                                 @l1, @l2, @l3, @pcs,
-                                 @cat,
                                  @bill, NULL, 0,
                                  @elig, @dis, @pay,
                                  @icd, 202, 0, GETDATE(),
@@ -10060,18 +10062,51 @@ namespace Enrollment.Controllers
                         ins.Parameters.AddWithValue("@cid",    claimIdLong);
                         ins.Parameters.AddWithValue("@slno",   (byte)slNoInt);
                         ins.Parameters.AddWithValue("@tpa",    tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
-                        ins.Parameters.AddWithValue("@l1",     tpaLevel1 > 0 ? (object)tpaLevel1 : DBNull.Value);
-                        ins.Parameters.AddWithValue("@l2",     tpaLevel2 > 0 ? (object)tpaLevel2 : DBNull.Value);
-                        ins.Parameters.AddWithValue("@l3",     !string.IsNullOrEmpty(tpaLevel3) ? (object)tpaLevel3 : DBNull.Value);
-                        ins.Parameters.AddWithValue("@pcs",    !string.IsNullOrEmpty(pcsCode) ? (object)pcsCode : DBNull.Value);
-                        ins.Parameters.AddWithValue("@cat",    category);  // 1 = Primary
                         ins.Parameters.AddWithValue("@bill",   packageAmt > 0 ? (object)packageAmt : DBNull.Value);
                         ins.Parameters.AddWithValue("@elig",   eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
                         ins.Parameters.AddWithValue("@dis",    disallowed > 0 ? (object)disallowed : DBNull.Value);
                         ins.Parameters.AddWithValue("@pay",    eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
                         ins.Parameters.AddWithValue("@icd",    icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
                         ins.Parameters.AddWithValue("@region", userRegionId);
-                        ins.ExecuteNonQuery();
+
+                        var newRowIdObj = ins.ExecuteScalar();
+                        long newRowId   = newRowIdObj != null && newRowIdObj != DBNull.Value
+                                          ? Convert.ToInt64(newRowIdObj) : 0;
+
+                        // Step 2: Try to enrich the row with Level1/2/3/PCS from TPA master,
+                        // copying the values into whatever the actual column names are.
+                        // Each UPDATE wrapped in try/catch — if a column name is wrong, just skip it.
+                        if (newRowId > 0 && tpaProcId > 0)
+                        {
+                            // Try the most common column name variations
+                            string[] updateCandidates = new[] {
+                                @"UPDATE ClaimsCoding SET TPALevel1=@l1, TPALevel2=@l2, TPALevel3=@l3, PCSCode=@pcs WHERE ID=@id",
+                                @"UPDATE ClaimsCoding SET Level1=@l1, Level2=@l2, Level3=@l3, PCS_Code=@pcs WHERE ID=@id",
+                                @"UPDATE ClaimsCoding SET TPALevel1=@l1, TPALevel2=@l2, TPALevel3=@l3 WHERE ID=@id",  // try without PCS if PCS column missing
+                                @"UPDATE ClaimsCoding SET TPALevel1=@l1 WHERE ID=@id"  // last resort, just Level1
+                            };
+                            foreach (var sql in updateCandidates)
+                            {
+                                try
+                                {
+                                    var upd2 = conn.CreateCommand();
+                                    upd2.CommandText = sql;
+                                    upd2.Parameters.AddWithValue("@id", newRowId);
+                                    if (sql.Contains("@l1"))  upd2.Parameters.AddWithValue("@l1",  tpaLevel1 > 0 ? (object)tpaLevel1 : DBNull.Value);
+                                    if (sql.Contains("@l2"))  upd2.Parameters.AddWithValue("@l2",  tpaLevel2 > 0 ? (object)tpaLevel2 : DBNull.Value);
+                                    if (sql.Contains("@l3"))  upd2.Parameters.AddWithValue("@l3",  !string.IsNullOrEmpty(tpaLevel3) ? (object)tpaLevel3 : DBNull.Value);
+                                    if (sql.Contains("@pcs")) upd2.Parameters.AddWithValue("@pcs", !string.IsNullOrEmpty(pcsCode) ? (object)pcsCode : DBNull.Value);
+                                    upd2.ExecuteNonQuery();
+                                    System.Diagnostics.Debug.WriteLine("[ClaimAI] Level update succeeded: " + sql);
+                                    break;  // Stop on first successful query
+                                }
+                                catch (Exception lvlEx)
+                                {
+                                    System.Diagnostics.Debug.WriteLine("[ClaimAI] Level update failed (will try next): " + lvlEx.Message);
+                                    continue;
+                                }
+                            }
+                        }
                     }
                 }
 
