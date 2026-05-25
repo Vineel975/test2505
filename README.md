@@ -1,13 +1,10 @@
-const jobId = 'PASTE_YOUR_JOBID_HERE';
-
-fetch('https://claims-backend-helixview.fhpl.net/api/query', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    path: 'processing:getJob',
-    args: { jobId },
-    format: 'json'
-  })
-})
-.then(r => r.json())
-.then(data => console.log('JOB:', data));
+{status: 'error', errorMessage: "[Request ID: fa254d82847a5c69] Server Error\nCould …getJob'. Did you forget to run `npx convex dev`?\n"}
+errorMessage
+: 
+"[Request ID: fa254d82847a5c69] Server Error\nCould not find public function for 'processing:getJob'. Did you forget to run `npx convex dev`?\n"
+status
+: 
+"error"
+[[Prototype]]
+: 
+Object
