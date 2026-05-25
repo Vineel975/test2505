@@ -167,12 +167,16 @@ export async function POST(request: NextRequest) {
 
   let tariffStorageId: Id<"_storage"> | undefined;
   if (tariffBill && tariffBill.size > 0) {
+    console.log("[audit/start] Tariff file received:", tariffBill.name, "size:", tariffBill.size);
     try {
       const tariffBuf = await tariffBill.arrayBuffer();
       tariffStorageId = await uploadToConvex(convex, tariffBuf, "application/pdf");
+      console.log("[audit/start] Tariff uploaded to Convex, storageId:", tariffStorageId);
     } catch (err) {
-      console.warn("[audit/start] Tariff upload failed (non-critical):", err);
+      console.error("[audit/start] Tariff upload FAILED:", err);
     }
+  } else {
+    console.log("[audit/start] NO tariff file in request — extraction will be skipped");
   }
 
   // ── 3. Create Convex job with files (for PDF viewer) — NO action scheduled ─
@@ -428,13 +432,19 @@ export async function POST(request: NextRequest) {
 
     // ── Trigger tariff matching as a lightweight Convex action ─────────────────
     // Tariff needs Convex ctx to read tariff PDFs from storage — can't run in Next.js
-    try {
-      await convex.action(api.processPdf.runTariffMatching, {
-        jobId,
-        tariffStorageId,
-      });
-    } catch (e) {
-      console.warn("[audit/start] Tariff matching failed:", e);
+    if (!tariffStorageId) {
+      console.warn("[audit/start] SKIPPING tariff matching — no tariffStorageId");
+    } else {
+      try {
+        console.log("[audit/start] Triggering runTariffMatching for jobId:", jobId, "tariffStorageId:", tariffStorageId);
+        await convex.action(api.processPdf.runTariffMatching, {
+          jobId,
+          tariffStorageId,
+        });
+        console.log("[audit/start] runTariffMatching completed");
+      } catch (e) {
+        console.error("[audit/start] Tariff matching FAILED:", e);
+      }
     }
   } catch (err) {
     console.error("[audit/start] Processing error:", err);
