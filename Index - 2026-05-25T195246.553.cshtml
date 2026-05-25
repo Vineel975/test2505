@@ -9616,6 +9616,11 @@
                             { kws: ['vaginal delivery twins','normal delivery twins','twins','multiple pregnancy','twin delivery'], l3r: 'Normal Vaginal Delivery in Twins(Multiple pregnency)', l3l: 'Normal Vaginal Delivery in Twins(Multiple pregnency)' },
                             // ID 402/403 — Plain Normal Delivery (fallback)
                             { kws: ['normal vaginal delivery','vaginal delivery','normal delivery','spontaneous vaginal','svd'], l3r: 'Normal Delivery', l3l: 'Normal Delivery' },
+
+                            // ID 402/403 — Catch-all for any maternity-related diagnosis where
+                            // doctor hasn't specified delivery type. Defaults to Normal Delivery.
+                            // Doctor can edit the procedure manually if needed.
+                            { kws: ['pregnancy','pregnant','gravida','para','gpla','g1p','g2p','g3p','g4p','g5p','antenatal','postnatal','labour','labor','obstetric','full term','preterm'], l3r: 'Normal Delivery', l3l: 'Normal Delivery' },
                         ];
 
                         var procRules2 = (claimType2 === 'maternity') ? maternityRules : cataractRules;
