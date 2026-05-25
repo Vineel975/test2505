@@ -10073,38 +10073,127 @@ namespace Enrollment.Controllers
                         long newRowId   = newRowIdObj != null && newRowIdObj != DBNull.Value
                                           ? Convert.ToInt64(newRowIdObj) : 0;
 
-                        // Step 2: Try to enrich the row with Level1/2/3/PCS from TPA master,
-                        // copying the values into whatever the actual column names are.
-                        // Each UPDATE wrapped in try/catch — if a column name is wrong, just skip it.
+                        // Step 2: Discover actual column names in ClaimsCoding and TPAProcedures
+                        // at runtime, then enrich the row with the right values.
                         if (newRowId > 0 && tpaProcId > 0)
                         {
-                            // Try the most common column name variations
-                            string[] updateCandidates = new[] {
-                                @"UPDATE ClaimsCoding SET TPALevel1=@l1, TPALevel2=@l2, TPALevel3=@l3, PCSCode=@pcs WHERE ID=@id",
-                                @"UPDATE ClaimsCoding SET Level1=@l1, Level2=@l2, Level3=@l3, PCS_Code=@pcs WHERE ID=@id",
-                                @"UPDATE ClaimsCoding SET TPALevel1=@l1, TPALevel2=@l2, TPALevel3=@l3 WHERE ID=@id",  // try without PCS if PCS column missing
-                                @"UPDATE ClaimsCoding SET TPALevel1=@l1 WHERE ID=@id"  // last resort, just Level1
-                            };
-                            foreach (var sql in updateCandidates)
+                            try
                             {
-                                try
+                                // Discover ClaimsCoding columns
+                                var ccCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                using (var colCmd = conn.CreateCommand())
                                 {
-                                    var upd2 = conn.CreateCommand();
-                                    upd2.CommandText = sql;
-                                    upd2.Parameters.AddWithValue("@id", newRowId);
-                                    if (sql.Contains("@l1"))  upd2.Parameters.AddWithValue("@l1",  tpaLevel1 > 0 ? (object)tpaLevel1 : DBNull.Value);
-                                    if (sql.Contains("@l2"))  upd2.Parameters.AddWithValue("@l2",  tpaLevel2 > 0 ? (object)tpaLevel2 : DBNull.Value);
-                                    if (sql.Contains("@l3"))  upd2.Parameters.AddWithValue("@l3",  !string.IsNullOrEmpty(tpaLevel3) ? (object)tpaLevel3 : DBNull.Value);
-                                    if (sql.Contains("@pcs")) upd2.Parameters.AddWithValue("@pcs", !string.IsNullOrEmpty(pcsCode) ? (object)pcsCode : DBNull.Value);
-                                    upd2.ExecuteNonQuery();
-                                    System.Diagnostics.Debug.WriteLine("[ClaimAI] Level update succeeded: " + sql);
-                                    break;  // Stop on first successful query
+                                    colCmd.CommandText = @"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                                                           WHERE TABLE_NAME = 'ClaimsCoding'";
+                                    using (var rdr = colCmd.ExecuteReader())
+                                    {
+                                        while (rdr.Read()) ccCols.Add(rdr["COLUMN_NAME"].ToString());
+                                    }
                                 }
-                                catch (Exception lvlEx)
+
+                                // Discover TPAProcedures columns
+                                var tpCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                using (var colCmd = conn.CreateCommand())
                                 {
-                                    System.Diagnostics.Debug.WriteLine("[ClaimAI] Level update failed (will try next): " + lvlEx.Message);
-                                    continue;
+                                    colCmd.CommandText = @"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                                                           WHERE TABLE_NAME = 'TPAProcedures'";
+                                    using (var rdr = colCmd.ExecuteReader())
+                                    {
+                                        while (rdr.Read()) tpCols.Add(rdr["COLUMN_NAME"].ToString());
+                                    }
                                 }
+
+                                // Pick the actual column name in TPAProcedures master
+                                Func<string[], string> pickCol = (candidates) =>
+                                {
+                                    foreach (var c in candidates) if (tpCols.Contains(c)) return c;
+                                    return null;
+                                };
+
+                                string colL1   = pickCol(new[]{"TPALevel1","Level1ID","Level1","Level1_P12"});
+                                string colL2   = pickCol(new[]{"TPALevel2","Level2ID","Level2","Level2_P12"});
+                                string colL3   = pickCol(new[]{"TPALevel3","Level3","Level3Name","Name"});
+                                string colPCS  = pickCol(new[]{"PCSCode","PCS_Code","PCS","PCSCode_P"});
+                                string colCat  = pickCol(new[]{"Category","CategoryID","Category_P","TreatmentCategory"});
+                                string colTT   = pickCol(new[]{"TreatmentType","TreatmentTypeID","TreatmentType_P","Treatment_Type"});
+
+                                // Build SELECT list with only existing columns
+                                var selectParts = new List<string>();
+                                if (colL1 != null)   selectParts.Add("ISNULL([" + colL1 + "], 0) AS L1");
+                                if (colL2 != null)   selectParts.Add("ISNULL([" + colL2 + "], 0) AS L2");
+                                if (colL3 != null)   selectParts.Add("ISNULL([" + colL3 + "], '') AS L3");
+                                if (colPCS != null)  selectParts.Add("ISNULL([" + colPCS + "], '') AS PCS");
+                                if (colCat != null)  selectParts.Add("ISNULL([" + colCat + "], 0) AS Cat");
+                                if (colTT != null)   selectParts.Add("ISNULL([" + colTT + "], 0) AS TT");
+
+                                int     l1Val = 0, l2Val = 0, catVal = 0, ttVal = 0;
+                                string  l3Val = null, pcsVal = null;
+
+                                if (selectParts.Count > 0)
+                                {
+                                    var lookup2 = conn.CreateCommand();
+                                    lookup2.CommandText = "SELECT TOP 1 " + string.Join(", ", selectParts) +
+                                                          " FROM TPAProcedures WITH(NOLOCK) WHERE ID = @tpa";
+                                    lookup2.Parameters.AddWithValue("@tpa", tpaProcId);
+                                    using (var rdr = lookup2.ExecuteReader())
+                                    {
+                                        if (rdr.Read())
+                                        {
+                                            if (colL1 != null)  l1Val  = Convert.ToInt32(rdr["L1"]);
+                                            if (colL2 != null)  l2Val  = Convert.ToInt32(rdr["L2"]);
+                                            if (colL3 != null)  l3Val  = rdr["L3"]?.ToString();
+                                            if (colPCS != null) pcsVal = rdr["PCS"]?.ToString();
+                                            if (colCat != null) catVal = Convert.ToInt32(rdr["Cat"]);
+                                            if (colTT != null)  ttVal  = Convert.ToInt32(rdr["TT"]);
+                                        }
+                                    }
+                                }
+
+                                // Build UPDATE for ClaimsCoding using its actual column names
+                                var setParts = new List<string>();
+                                var updCmd   = conn.CreateCommand();
+
+                                Action<string, string[], object> trySet = (paramName, candidates, value) =>
+                                {
+                                    foreach (var c in candidates)
+                                    {
+                                        if (ccCols.Contains(c))
+                                        {
+                                            setParts.Add("[" + c + "] = @" + paramName);
+                                            updCmd.Parameters.AddWithValue("@" + paramName, value ?? DBNull.Value);
+                                            return;
+                                        }
+                                    }
+                                };
+
+                                trySet("l1",  new[]{"TPALevel1","Level1ID","Level1","Level1_P12"},
+                                       l1Val > 0 ? (object)l1Val : null);
+                                trySet("l2",  new[]{"TPALevel2","Level2ID","Level2","Level2_P12"},
+                                       l2Val > 0 ? (object)l2Val : null);
+                                trySet("l3",  new[]{"TPALevel3","Level3","Level3Name"},
+                                       !string.IsNullOrEmpty(l3Val) ? (object)l3Val : null);
+                                trySet("pcs", new[]{"PCSCode","PCS_Code","PCS"},
+                                       !string.IsNullOrEmpty(pcsVal) ? (object)pcsVal : null);
+                                trySet("cat", new[]{"Category","CategoryID","Category_P","TreatmentCategory"},
+                                       catVal > 0 ? (object)catVal : (object)1);  // default Primary=1
+                                trySet("tt",  new[]{"TreatmentType","TreatmentTypeID","TreatmentType_P","Treatment_Type"},
+                                       ttVal > 0 ? (object)ttVal : null);
+
+                                if (setParts.Count > 0)
+                                {
+                                    updCmd.CommandText = "UPDATE ClaimsCoding SET " +
+                                                         string.Join(", ", setParts) +
+                                                         " WHERE ID = @id";
+                                    updCmd.Parameters.AddWithValue("@id", newRowId);
+                                    updCmd.ExecuteNonQuery();
+                                    System.Diagnostics.Debug.WriteLine("[ClaimAI] Enriched coding row with: " +
+                                                                       string.Join(", ", setParts));
+                                }
+                            }
+                            catch (Exception enrichEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine("[ClaimAI] Enrich failed: " + enrichEx.Message);
+                                // Row still saved — enrichment is best-effort
                             }
                         }
                     }
