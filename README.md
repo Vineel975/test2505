@@ -1,6 +1,1 @@
-$.ajax({
-  url: '/MedicalScrutiny/GetClaimType',
-  type: 'GET',
-  data: { claimId: '<actual claim ID you are testing>' },
-  success: function(res) { console.log('Spectra response:', res); }
-});
+Access to fetch at 'https://claims-helixview.fhpl.net/api/classify-claim-type' from origin 'https://spectra-ai.fhpl.net' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.
