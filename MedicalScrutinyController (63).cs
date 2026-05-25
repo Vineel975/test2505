@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
@@ -9976,15 +9976,6 @@ namespace Enrollment.Controllers
                     decimal disallowed = (packageAmt > 0 && eligibleAmt > 0 && packageAmt > eligibleAmt)
                                          ? (packageAmt - eligibleAmt) : 0m;
 
-                    // Compute BillingType matching native Spectra logic:
-                    //   203 = both bill amount + package present
-                    //   201 = only package
-                    //   202 = only bill amount
-                    //   0   = neither (fallback — won't insert since column is NOT NULL)
-                    // For our flow: @BillAmount=packageAmt (full bill), @PackageRate=NULL → 202
-                    int billingType = 0;
-                    if (packageAmt > 0) billingType = 202;  // Only bill amount, no package rate
-
                     cmd.Parameters.AddWithValue("@BillAmount",     packageAmt > 0 ? (object)packageAmt : DBNull.Value);
                     cmd.Parameters.AddWithValue("@PackageRate",    DBNull.Value);
                     cmd.Parameters.AddWithValue("@Discount",       0m);
@@ -9994,9 +9985,41 @@ namespace Enrollment.Controllers
                     cmd.Parameters.AddWithValue("@IssueID",        issueId > 0 ? (object)(byte)issueId : DBNull.Value);
                     cmd.Parameters.AddWithValue("@SpecialityType", DBNull.Value);
                     cmd.Parameters.AddWithValue("@ICD10Code",      icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
-                    cmd.Parameters.AddWithValue("@BillingType",    billingType);
 
-                    cmd.ExecuteNonQuery();
+                    try
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+                    catch (System.Data.SqlClient.SqlException sqlEx) when (sqlEx.Message.IndexOf("BillingType_P51", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        // SP doesn't compute BillingType for this case (e.g. maternity).
+                        // Insert the row manually with BillingType=202 (bill amount only, no package).
+                        // We mirror what the SP normally does, plus set BillingType_P51 explicitly.
+                        conn.Close(); conn.Open();
+                        var ins = conn.CreateCommand();
+                        ins.CommandText = @"
+                            INSERT INTO ClaimsCoding
+                                (ClaimID, Slno, TPAProcedureID, BillAmount, PackageRate, Discount,
+                                 EligibleAmount, DisallowedAmount, PayableAmount, IssueID,
+                                 SpecialityType, ICDCode, BillingType_P51, Deleted,
+                                 CreatedBy, CreatedDatetime)
+                            VALUES
+                                (@cid, @slno, @tpa, @bill, NULL, 0,
+                                 @elig, @dis, @pay, @iss,
+                                 NULL, @icd, 202, 0,
+                                 @user, GETDATE())";
+                        ins.Parameters.AddWithValue("@cid",  claimIdLong);
+                        ins.Parameters.AddWithValue("@slno", (byte)slNoInt);
+                        ins.Parameters.AddWithValue("@tpa",  tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@bill", packageAmt > 0 ? (object)packageAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@elig", eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@dis",  disallowed > 0 ? (object)disallowed : DBNull.Value);
+                        ins.Parameters.AddWithValue("@pay",  eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
+                        ins.Parameters.AddWithValue("@iss",  issueId > 0 ? (object)(byte)issueId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@icd",  icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@user", (Session[SessionValue.LoginUserID] ?? (object)1));
+                        ins.ExecuteNonQuery();
+                    }
                 }
 
                 // Override ICDCode in ClaimsCoding with the exact doctor-selected code.
