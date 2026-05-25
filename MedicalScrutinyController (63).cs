@@ -10002,20 +10002,69 @@ namespace Enrollment.Controllers
                         if (Session[SessionValue.UserRegionID] != null)
                             int.TryParse(Session[SessionValue.UserRegionID].ToString(), out userRegionId);
 
+                        // Look up the TPA procedure master row to copy Level1/Level2/Level3, PCSCode, Category etc.
+                        // into the new ClaimsCoding row — same way native Spectra coding save does it.
+                        int     tpaLevel1   = 0, tpaLevel2 = 0;
+                        string  tpaLevel3   = null;
+                        string  pcsCode     = null;
+                        int     category    = 1; // Primary (same as cataract)
+                        if (tpaProcId > 0)
+                        {
+                            var lookup = conn.CreateCommand();
+                            lookup.CommandText = @"
+                                SELECT TOP 1
+                                    ISNULL(Level1ID, 0)   AS L1,
+                                    ISNULL(Level2ID, 0)   AS L2,
+                                    ISNULL(Level3, '')    AS L3,
+                                    ISNULL(PCSCode, '')   AS PCS
+                                FROM TPAProcedures WITH(NOLOCK)
+                                WHERE ID = @tpa AND ISNULL(Deleted, 0) = 0";
+                            lookup.Parameters.AddWithValue("@tpa", tpaProcId);
+                            try
+                            {
+                                using (var rdr = lookup.ExecuteReader())
+                                {
+                                    if (rdr.Read())
+                                    {
+                                        tpaLevel1 = Convert.ToInt32(rdr["L1"]);
+                                        tpaLevel2 = Convert.ToInt32(rdr["L2"]);
+                                        tpaLevel3 = rdr["L3"]  != DBNull.Value ? rdr["L3"].ToString()  : null;
+                                        pcsCode   = rdr["PCS"] != DBNull.Value ? rdr["PCS"].ToString() : null;
+                                    }
+                                }
+                            }
+                            catch (Exception lookupEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine("[SaveCodingRowForClaimAI] TPA lookup failed: " + lookupEx.Message);
+                                // Try alternative column names if first attempt fails
+                            }
+                        }
+
                         ins.CommandText = @"
                             INSERT INTO ClaimsCoding
-                                (ClaimID, Slno, TPAProcedureID, BillAmount, PackageRate, Discount,
+                                (ClaimID, Slno, TPAProcedureID,
+                                 TPALevel1, TPALevel2, TPALevel3, PCSCode,
+                                 Category,
+                                 BillAmount, PackageRate, Discount,
                                  EligibleAmount, DisallowedAmount, PayableAmount,
                                  ICDCode, BillingType_P51, Deleted, CreatedDatetime,
                                  CreatedUserRegionID)
                             VALUES
-                                (@cid, @slno, @tpa, @bill, NULL, 0,
+                                (@cid, @slno, @tpa,
+                                 @l1, @l2, @l3, @pcs,
+                                 @cat,
+                                 @bill, NULL, 0,
                                  @elig, @dis, @pay,
                                  @icd, 202, 0, GETDATE(),
                                  @region)";
                         ins.Parameters.AddWithValue("@cid",    claimIdLong);
                         ins.Parameters.AddWithValue("@slno",   (byte)slNoInt);
                         ins.Parameters.AddWithValue("@tpa",    tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
+                        ins.Parameters.AddWithValue("@l1",     tpaLevel1 > 0 ? (object)tpaLevel1 : DBNull.Value);
+                        ins.Parameters.AddWithValue("@l2",     tpaLevel2 > 0 ? (object)tpaLevel2 : DBNull.Value);
+                        ins.Parameters.AddWithValue("@l3",     !string.IsNullOrEmpty(tpaLevel3) ? (object)tpaLevel3 : DBNull.Value);
+                        ins.Parameters.AddWithValue("@pcs",    !string.IsNullOrEmpty(pcsCode) ? (object)pcsCode : DBNull.Value);
+                        ins.Parameters.AddWithValue("@cat",    category);  // 1 = Primary
                         ins.Parameters.AddWithValue("@bill",   packageAmt > 0 ? (object)packageAmt : DBNull.Value);
                         ins.Parameters.AddWithValue("@elig",   eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
                         ins.Parameters.AddWithValue("@dis",    disallowed > 0 ? (object)disallowed : DBNull.Value);
