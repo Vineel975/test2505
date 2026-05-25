@@ -9993,21 +9993,19 @@ namespace Enrollment.Controllers
                     catch (System.Data.SqlClient.SqlException sqlEx) when (sqlEx.Message.IndexOf("BillingType_P51", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         // SP doesn't compute BillingType for this case (e.g. maternity).
-                        // Insert the row manually with BillingType=202 (bill amount only, no package).
-                        // We mirror what the SP normally does, plus set BillingType_P51 explicitly.
+                        // Minimal INSERT using only columns we know exist from SP signature + BillingType_P51.
+                        // All other columns will use their DB defaults.
                         conn.Close(); conn.Open();
                         var ins = conn.CreateCommand();
                         ins.CommandText = @"
                             INSERT INTO ClaimsCoding
                                 (ClaimID, Slno, TPAProcedureID, BillAmount, PackageRate, Discount,
-                                 EligibleAmount, DisallowedAmount, PayableAmount, IssueID,
-                                 SpecialityType, ICDCode, BillingType_P51, Deleted,
-                                 CreatedBy, CreatedDatetime)
+                                 EligibleAmount, DisallowedAmount, PayableAmount,
+                                 ICDCode, BillingType_P51, Deleted, CreatedDatetime)
                             VALUES
                                 (@cid, @slno, @tpa, @bill, NULL, 0,
-                                 @elig, @dis, @pay, @iss,
-                                 NULL, @icd, 202, 0,
-                                 @user, GETDATE())";
+                                 @elig, @dis, @pay,
+                                 @icd, 202, 0, GETDATE())";
                         ins.Parameters.AddWithValue("@cid",  claimIdLong);
                         ins.Parameters.AddWithValue("@slno", (byte)slNoInt);
                         ins.Parameters.AddWithValue("@tpa",  tpaProcId > 0 ? (object)tpaProcId : DBNull.Value);
@@ -10015,9 +10013,7 @@ namespace Enrollment.Controllers
                         ins.Parameters.AddWithValue("@elig", eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
                         ins.Parameters.AddWithValue("@dis",  disallowed > 0 ? (object)disallowed : DBNull.Value);
                         ins.Parameters.AddWithValue("@pay",  eligibleAmt > 0 ? (object)eligibleAmt : DBNull.Value);
-                        ins.Parameters.AddWithValue("@iss",  issueId > 0 ? (object)(byte)issueId : DBNull.Value);
                         ins.Parameters.AddWithValue("@icd",  icdNumericId > 0 ? (object)icdNumericId : DBNull.Value);
-                        ins.Parameters.AddWithValue("@user", (Session[SessionValue.LoginUserID] ?? (object)1));
                         ins.ExecuteNonQuery();
                     }
                 }
