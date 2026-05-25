@@ -1,10 +1,4 @@
-{status: 'error', errorMessage: "[Request ID: fa254d82847a5c69] Server Error\nCould …getJob'. Did you forget to run `npx convex dev`?\n"}
-errorMessage
-: 
-"[Request ID: fa254d82847a5c69] Server Error\nCould not find public function for 'processing:getJob'. Did you forget to run `npx convex dev`?\n"
-status
-: 
-"error"
-[[Prototype]]
-: 
-Object
+fetch('https://claims-backend-helixview.fhpl.net/instance_name')
+  .then(r => r.text())
+  .then(t => console.log('Convex reachable:', t))
+  .catch(e => console.log('Convex unreachable:', e.message));
