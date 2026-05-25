@@ -1,4 +1,4 @@
-﻿@{
+@{
     ViewBag.TitleDepartment = "Claims";
     ViewBag.Title = "Claim";
     Layout = "~/Views/Shared/_Layout.cshtml";
@@ -9629,17 +9629,27 @@
                             }
                         }
 
+                        console.log('[ClaimAI] TPA match debug — claimType=' + claimType2 + ' targetL3=' + targetL3_2 + ' hint=' + procedureHint2);
                         if (targetL3_2) {
-                            var norm2 = targetL3_2.toLowerCase().replace(/[ \-–()]/g, '');
+                            var norm2 = targetL3_2.toLowerCase().replace(/[ \-–(),./]/g, '');
                             var best2 = 0;
+                            var bestName2 = '';
                             for (var ti2 = 0; ti2 < tpaList2.length; ti2++) {
                                 var t2 = tpaList2[ti2];
-                                var tn2 = (t2.Name || t2.Level3 || '').toLowerCase().replace(/[ \-–()]/g, '');
+                                var tn2 = (t2.Name || t2.Level3 || '').toLowerCase().replace(/[ \-–(),./]/g, '');
                                 var sc2 = (tn2 === norm2) ? 100 : 0;
-                                if (!sc2) { targetL3_2.toLowerCase().split(' ').forEach(function(w){ if (w.length>2 && tn2.indexOf(w)!==-1) sc2+=10; }); }
-                                if (sc2 > best2) { best2 = sc2; procID2 = t2.ID; }
+                                if (!sc2) {
+                                    // Substring score — weighted by length of matched word
+                                    targetL3_2.toLowerCase().split(/[ ,()]+/).forEach(function(w){
+                                        if (w.length > 2 && tn2.indexOf(w) !== -1) sc2 += w.length;
+                                    });
+                                }
+                                if (sc2 > best2) { best2 = sc2; procID2 = t2.ID; bestName2 = t2.Name || t2.Level3; }
                             }
-                            if (best2 < 30) procID2 = null;
+                            console.log('[ClaimAI] TPA match result — bestScore=' + best2 + ' bestName=' + bestName2 + ' procID=' + procID2);
+                            if (best2 < 10) procID2 = null;  // Lowered threshold for maternity matching
+                        } else {
+                            console.warn('[ClaimAI] No matching rule for procedureHint=' + procedureHint2 + ' (claimType=' + claimType2 + ')');
                         }
                     } catch(e) { console.warn('[ClaimAI] TPA match error:', e); }
 
@@ -9647,7 +9657,7 @@
                         console.log('[ClaimAI] setIcdSlots: procID=' + procID2 + ' icd=' + lastIcdCode2 + ' eligible=' + eligibleAmt2 + ' package=' + packageAmt2);
                         claimAI_saveCodingRow(procID2, lastIcdCode2, eligibleAmt2, packageAmt2);
                     } else {
-                        console.warn('[ClaimAI] setIcdSlots: no procedure match, hint=' + procedureHint2);
+                        console.warn('[ClaimAI] setIcdSlots: no procedure match — coding row NOT saved. hint=' + procedureHint2 + ' claimType=' + claimType2);
                     }
                 }
             });
