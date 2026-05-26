@@ -1,4 +1,14 @@
-Access to fetch at 'https://claims-auth-helixview.fhpl.net/.well-known/openid-configuration' from origin 'http://localhost:50052' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
-VM262:1  GET https://claims-auth-helixview.fhpl.net/.well-known/openid-configuration net::ERR_FAILED 404 (Not Found)
-(anonymous) @ VM262:1
-VM262:4 Auth URL FAIL: Failed to fetch
+Tariff matching FAILED: Error: [Request ID: ba139f08d5f75384] Server Error
+Uncaught FetchModelsError: fetch failed
+    at fetchModels (../node_modules/@tokenlens/fetch/src/index.ts:133:2)
+    at async handler (../convex/processPdf.ts:987:21)
+
+    at async handler (../convex/processPdf.ts:987:21)
+    at async POST (app\api\audit\start\route.ts:450:9)
+  448 |       try {
+  449 |         console.log("[audit/start] Triggering runTariffMatching for jobId:", jobId, "tariffStorageId:", tariffStorageId);
+> 450 |         await convex.action(api.processPdf.runTariffMatching, {
+      |         ^
+  451 |           jobId,
+  452 |           tariffStorageId,
+  453 |         });
