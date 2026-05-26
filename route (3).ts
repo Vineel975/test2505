@@ -25,7 +25,6 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { processSinglePdf } from "@/src/extract";
-import { fetchModels } from "@tokenlens/fetch";
 import { validateExtractedPatient, getPatientInfoDbByClaimId } from "@/lib/db";
 
 // Allow up to 2 minutes for large PDF uploads to Convex storage
@@ -225,7 +224,9 @@ export async function POST(request: NextRequest) {
 
     const modelName = process.env.MODEL_NAME || "google/gemini-3-flash-preview";
     const provider   = process.env.MODEL_PROVIDER || "openrouter";
-    const providers  = await fetchModels();
+    // fetchModels() removed — backend has no outbound internet access to tokenlens registry.
+    // Token cost telemetry will show as 0. Doesn't affect AI extraction.
+    const providers: Record<string, unknown> = {};
     const claimType  = (spectraFields?.claimType as string) ?? "cataract";
 
     const { result, totals } = await processSinglePdf({
