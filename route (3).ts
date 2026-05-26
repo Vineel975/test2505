@@ -40,12 +40,22 @@ export const maxDuration = 120;
 const RAW_INTERNAL = process.env.CONVEX_SELF_HOSTED_URL ?? "";
 const RAW_PUBLIC   = process.env.CONVEX_URL_PUBLIC ?? process.env.NEXT_PUBLIC_CONVEX_URL ?? "";
 
-// Detect if we are inside Docker (heuristic — set DOCKER_ENV=1 in your container env)
-const IN_DOCKER = process.env.DOCKER_ENV === "1" || process.env.IN_DOCKER === "true";
+// Auto-detect Docker: if CONVEX_SELF_HOSTED_URL is a Docker-style hostname
+// (starts with http://backend or http://convex), we're inside Docker network.
+// Explicit DOCKER_ENV=0 disables it for local dev where the same env file is used.
+const IS_DOCKER_HOSTNAME = RAW_INTERNAL.startsWith("http://backend") ||
+                            RAW_INTERNAL.startsWith("http://convex") ||
+                            RAW_INTERNAL.includes(":3210");
+const IN_DOCKER = process.env.DOCKER_ENV === "0" || process.env.IN_DOCKER === "false"
+                  ? false
+                  : (process.env.DOCKER_ENV === "1" || process.env.IN_DOCKER === "true" || IS_DOCKER_HOSTNAME);
 
-// Use internal URL only when explicitly running in Docker AND it is set.
-// Otherwise default to the public URL — works locally and in prod fallback.
+// Use internal URL when in Docker network (avoid SSL/DNS public-loopback issues).
+// Use public URL only outside Docker (local dev).
 const CONVEX_URL = (IN_DOCKER && RAW_INTERNAL) ? RAW_INTERNAL : RAW_PUBLIC;
+
+console.log("[audit/start] Startup config:",
+  { IN_DOCKER, IS_DOCKER_HOSTNAME, RAW_INTERNAL, RAW_PUBLIC, CHOSEN: CONVEX_URL });
 
 async function uploadToConvex(
   convex: ConvexHttpClient,
