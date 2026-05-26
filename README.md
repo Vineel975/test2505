@@ -1,30 +1,11 @@
-26051796629
-26051796637
-26051796654
-26051796671
-26051796762
-26051796423
-26051796577
-26051796489
-26051796501
-26051796596
-26051591856
-26051694326
-26051897945
-26051591854
-26051590845
-26051591486
-26051696018
-26051897809
-26051485174
-26051591399
-26051695562
-26051696051
-26051898316
-26051899125
-26051899333
-26051899932
-26051591758
-26051593677
-26051694447
-26051591708
+// Test if convex is reachable
+fetch('https://claims-backend-helixview.fhpl.net/instance_name')
+  .then(r => r.text())
+  .then(t => console.log('Convex HTTP:', t))
+  .catch(e => console.log('Convex HTTP FAIL:', e.message));
+
+// Test if auth URL is reachable  
+fetch('https://claims-auth-helixview.fhpl.net/.well-known/openid-configuration')
+  .then(r => r.status === 200 ? r.json() : Promise.reject('status ' + r.status))
+  .then(d => console.log('Auth URL:', d.issuer || 'reachable'))
+  .catch(e => console.log('Auth URL FAIL:', e.message));
