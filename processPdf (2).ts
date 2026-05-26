@@ -5,7 +5,6 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { processSinglePdf } from "../src/extract";
 import { getModel, type ModelProvider } from "../src/model-provider";
-import { getTokenCosts } from "@tokenlens/helpers";
 import { evaluate } from "../src/evaluator";
 import { setLoggerSink } from "../src/logger";
 import {
@@ -160,15 +159,8 @@ async function extractBenefitAmountFromPolicyWordings(
     ],
   });
 
-  const modelId = `${provider}/${modelName}`;
-  const costs = getTokenCosts({
-    modelId,
-    usage: {
-      promptTokens: usage.inputTokens || 0,
-      completionTokens: usage.outputTokens || 0,
-    },
-    providers,
-  });
+  // getTokenCosts removed — was triggering FetchModelsError. Token cost telemetry non-essential.
+  const costs = { totalUSD: 0 };
 
   const benefitAmount =
     object.benefitAmount !== null &&
@@ -328,15 +320,8 @@ async function extractClaimTariffFromPdf(
     ],
   });
 
-  const modelId = `${aiConfig.provider}/${aiConfig.modelName}`;
-  const costs = getTokenCosts({
-    modelId,
-    usage: {
-      promptTokens: usage.inputTokens || 0,
-      completionTokens: usage.outputTokens || 0,
-    },
-    providers,
-  });
+  // getTokenCosts removed — was triggering FetchModelsError. Token cost telemetry non-essential.
+  const costs = { totalUSD: 0 };
 
   const tariffExtractionItem = normalizeTariffBreakdown(object.tariffExtractionItem);
 
