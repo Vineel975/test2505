@@ -5,7 +5,6 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { processSinglePdf } from "../src/extract";
 import { getModel, type ModelProvider } from "../src/model-provider";
-import { fetchModels } from "@tokenlens/fetch";
 import { getTokenCosts } from "@tokenlens/helpers";
 import { evaluate } from "../src/evaluator";
 import { setLoggerSink } from "../src/logger";
@@ -636,14 +635,9 @@ export const processPdfInternal = internalAction({
       message: formatLogMessage(`[DEBUG] Fetching model providers`),
     });
 
-    // fetchModels() reaches out to tokenlens registry for pricing data.
-    // If unreachable, continue without it — token costs will show as 0.
-    let providers: any = {};
-    try {
-      providers = await fetchModels();
-    } catch (e) {
-      console.warn("[processing] fetchModels failed (continuing without pricing data):", e instanceof Error ? e.message : String(e));
-    }
+    // fetchModels() removed — backend has no outbound internet access.
+    // Token cost telemetry will show as 0. Doesn't affect AI extraction.
+    const providers: any = {};
     await ctx.runMutation(api.processing.addLog, {
       jobId: args.jobId,
       message: formatLogMessage("[DEBUG] Providers fetched, starting processing"),
@@ -995,19 +989,9 @@ export const runTariffMatching = action({
 
     const modelName = process.env.MODEL_NAME || "google/gemini-3-flash-preview";
     const provider = process.env.MODEL_PROVIDER || "openrouter";
-    // fetchModels() reaches out to tokenlens registry for pricing data.
-    // If unreachable (firewall/internet blocked from Convex backend), continue
-    // without it — token costs will just show as 0.
-    let providers: any = {};
-    try {
-      providers = await fetchModels();
-    } catch (e) {
-      console.warn("[runTariffMatching] fetchModels failed (continuing without pricing data):", e instanceof Error ? e.message : String(e));
-      await ctx.runMutation(api.processing.addLog, {
-        jobId: args.jobId,
-        message: `[WARN][TARIFF] fetchModels failed — token costs will show as 0. Reason: ${e instanceof Error ? e.message : String(e)}`,
-      });
-    }
+    // fetchModels() removed — backend has no outbound internet access.
+    // Token cost telemetry will show as 0. Doesn't affect AI extraction.
+    const providers: any = {};
 
     const tariffCatalog = (await ctx.runQuery(
       api.processing.getTariffPdfCatalog,
