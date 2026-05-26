@@ -1,58 +1,17 @@
-Job from PUBLIC URL: 
-{status: 'success', value: {…}}
-status
-: 
-"success"
-value
-: 
-claimId
-: 
-"26051696051"
-completed
-: 
-1
-error
-: 
-"fetch failed"
-errorCount
-: 
-1
-files
-: 
-(2) [{…}, {…}]
-isComplete
-: 
-true
-logs
-: 
-[]
-results
-: 
-[]
-spectraFields
-: 
-{admissionDate: '2026-05-18T00:00:00', approvedAccommodation: 'Day Care', availedAccommodation: 'Day Care', availedAccommodationId: '195', claimSlNo: '1', …}
-status
-: 
-"error"
-successCount
-: 
-0
-total
-: 
-1
-totalCompletionTokens
-: 
-0
-totalCost
-: 
-0
-totalPromptTokens
-: 
-0
-totalTokens
-: 
-0
-_id
-: 
-"jh7bh5btw5fq7q5tnkagpz54a587fdqc"
+# 1. Find the running ClaimAI container
+docker ps | grep -i claim
+
+# 2. Verify OPENROUTER_API_KEY is loaded in the container
+docker exec <claimai-web-container> sh -c 'echo "Key length: ${#OPENROUTER_API_KEY}"'
+
+# 3. Test if openrouter.ai is reachable from inside the container
+docker exec <claimai-web-container> curl -sI https://openrouter.ai --max-time 10
+
+# 4. Test the actual API endpoint
+docker exec <claimai-web-container> sh -c 'curl -s -o /dev/null -w "HTTP_STATUS:%{http_code} TIME:%{time_total}s\n" https://openrouter.ai/api/v1/models --max-time 15'
+
+# 5. Check exact error stack trace from logs
+docker logs <claimai-web-container> --tail 200 | grep -B 2 -A 10 "fetch failed\|Processing error"
+
+# 6. Check for proxy env vars
+docker exec <claimai-web-container> env | grep -iE "proxy|HTTPS_PROXY|HTTP_PROXY"
