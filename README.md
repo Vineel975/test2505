@@ -1,16 +1,1 @@
-# 1. Verify the file actually has the updated content on prod
-docker exec  claim-processing-web-1 grep -n "fetchModels" /app/app/api/audit/start/route.ts
-# Should print NO matches if file is updated
-
-# 2. Rebuild Next.js inside container
-docker exec claim-processing-web-1 grep -lr "tokenlens" /app/.next/server/ 2>/dev/null | head -5
-docker exec claim-processing-web-1 grep -lr "FetchModelsError" /app/.next/server/ 2>/dev/null | head -5
-
-/app/.next/server/chunks/[root-of-the-server]__84337b0e._.js
-
-# 3. Restart the container
-docker-compose restart web
-# OR
-docker restart <claimai-web-container>
-
-# 4. Try AI Summary again
+Convex error: CHECKPOINT 1e FAILED: ClaimAI returned HTTP 504 from [https://claims-helixview.fhpl.net/api/audit/start]. Response: <html> <head><title>504 Gateway Time-out</title></head> <body> <center><h1>504 Gateway Time-out</h1></center> <hr><center>nginx/1.28.3 (Ubuntu)</center> </body> </html>
