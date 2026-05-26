@@ -1,11 +1,4 @@
-// Test if convex is reachable
-fetch('https://claims-backend-helixview.fhpl.net/instance_name')
-  .then(r => r.text())
-  .then(t => console.log('Convex HTTP:', t))
-  .catch(e => console.log('Convex HTTP FAIL:', e.message));
-
-// Test if auth URL is reachable  
-fetch('https://claims-auth-helixview.fhpl.net/.well-known/openid-configuration')
-  .then(r => r.status === 200 ? r.json() : Promise.reject('status ' + r.status))
-  .then(d => console.log('Auth URL:', d.issuer || 'reachable'))
-  .catch(e => console.log('Auth URL FAIL:', e.message));
+Access to fetch at 'https://claims-auth-helixview.fhpl.net/.well-known/openid-configuration' from origin 'http://localhost:50052' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+VM262:1  GET https://claims-auth-helixview.fhpl.net/.well-known/openid-configuration net::ERR_FAILED 404 (Not Found)
+(anonymous) @ VM262:1
+VM262:4 Auth URL FAIL: Failed to fetch
