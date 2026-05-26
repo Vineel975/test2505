@@ -1,4 +1,4 @@
-Tariff matching FAILED: Error: [Request ID: ba139f08d5f75384] Server Error
+[audit/start] Tariff matching FAILED: Error: [Request ID: 1991732273c8fe88] Server Error
 Uncaught FetchModelsError: fetch failed
     at fetchModels (../node_modules/@tokenlens/fetch/src/index.ts:133:2)
     at async handler (../convex/processPdf.ts:987:21)
