@@ -1,1 +1,1 @@
-Convex error: CHECKPOINT 1e FAILED: ClaimAI returned HTTP 504 from [https://claims-helixview.fhpl.net/api/audit/start]. Response: <html> <head><title>504 Gateway Time-out</title></head> <body> <center><h1>504 Gateway Time-out</h1></center> <hr><center>nginx/1.28.3 (Ubuntu)</center> </body> </html>
+<img width="1668" height="800" alt="image" src="https://github.com/user-attachments/assets/759ca29e-1a19-4f50-a1c4-0e3335631914" />
